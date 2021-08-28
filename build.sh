@@ -8,6 +8,7 @@ export INSTALL_PREFIX="$VIM_BUILD_PREFIX/install"
 export BUILD_PREFIX="$VIM_BUILD_PREFIX/src"
 export PYTHON_VERSION="3.9.6"
 export RUBY_VERSION="3.0.2"
+export VIM_VERSION="8.2.3384"
 
 ontrap()
 {
@@ -28,6 +29,11 @@ setup_env()
     RUBY_VERSION_SPLIT0=$(echo "$RUBY_VERSION" | cut -d "." -f1)
     RUBY_VERSION_SPLIT1=$(echo "$RUBY_VERSION" | cut -d "." -f2)
     export RUBY_URL="https://cache.ruby-lang.org/pub/ruby/$RUBY_VERSION_SPLIT0.$RUBY_VERSION_SPLIT1/$RUBY_FILE"
+
+    # vim
+    export VIM_FILE="vim-$VIM_VERSION.tar.gz"
+    export VIM_FOLDER="vim-$VIM_VERSION"
+    export VIM_URL="https://github.com/vim/vim/archive/refs/tags/v$VIM_VERSION.tar.gz"
 }
 
 download_sources()
@@ -47,6 +53,13 @@ download_sources()
     fi
     rm -rf "$RUBY_FOLDER"
     tar -xzf "$RUBY_FILE"
+
+    # vim
+    if [ ! -f "$VIM_FILE" ]; then
+        wget -O "$VIM_FILE" "$VIM_URL"
+    fi
+    rm -rf "$VIM_FOLDER"
+    tar -xzf "$VIM_FILE"
 }
 
 cleanup()
@@ -60,12 +73,16 @@ cleanup()
     # ruby
     rm "$RUBY_FILE"
     rm -r "$RUBY_FOLDER"
+
+    # vim
+    rm "$VIM_FILE"
+    rm -r "$VIM_FOLDER"
 }
 
 
 # prepare env
 cd "$VIM_BUILD_PREFIX"
-. environment
+. ./environment
 mkdir -p "$INSTALL_PREFIX"
 mkdir -p "$BUILD_PREFIX"
 setup_env
@@ -86,6 +103,23 @@ cd "$RUBY_FOLDER"
 mkdir build
 cd build
 ../configure --prefix="$INSTALL_PREFIX"
+make -j $(nproc)
+make install
+
+# build vim
+cd "$BUILD_PREFIX"
+cd "$VIM_FOLDER"
+./configure \
+    --with-features=huge \
+    --enable-multibyte \
+    --enable-rubyinterp=yes \
+    --enable-python3interp=yes \
+    --with-python3-config-dir=$(python3-config --configdir) \
+    --enable-perlinterp=no \
+    --enable-luainterp=no \
+    --enable-gui=no \
+    --enable-cscope \
+    --prefix="$INSTALL_PREFIX"
 make -j $(nproc)
 make install
 
