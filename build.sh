@@ -4,8 +4,8 @@ trap ontrap 0
 
 # input env
 export VIM_BUILD_PREFIX=$(pwd)
-export INSTALL_PREFIX="$HOME/install"
-export BUILD_PREFIX="$HOME/src"
+export INSTALL_PREFIX="$VIM_BUILD_PREFIX/install"
+export BUILD_PREFIX="$VIM_BUILD_PREFIX/src"
 export PYTHON_VERSION="3.9.6"
 export RUBY_VERSION="3.0.2"
 
