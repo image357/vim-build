@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 set -e
 trap ontrap 0
 
@@ -6,9 +6,6 @@ trap ontrap 0
 export VIM_BUILD_PREFIX=$(pwd)
 export INSTALL_PREFIX="$VIM_BUILD_PREFIX/install"
 export BUILD_PREFIX="$VIM_BUILD_PREFIX/src"
-export PYTHON_VERSION="3.9.6"
-export RUBY_VERSION="3.0.2"
-export VIM_VERSION="8.2.3384"
 
 ontrap()
 {
@@ -16,8 +13,30 @@ ontrap()
     exec /bin/sh -i
 }
 
+# versions
+export ZLIB_VERSION="1.2.11"
+export LIBFFI_VERSION="3.4.2"
+export PYTHON_VERSION="3.9.6"
+export RUBY_VERSION="3.0.2"
+export VIM_VERSION="8.2.3384"
+
 setup_env()
 {
+    # base env
+    PATH="$INSTALL_PREFIX/bin${PATH:+:${PATH}}"; export PATH
+    MANPATH="$INSTALL_PREFIX/share/man${MANPATH:+:${MANPATH}}"; export MANPATH
+    LD_RUN_PATH="$INSTALL_PREFIX/lib:$INSTALL_PREFIX/lib64${LD_RUN_PATH:+:${LD_RUN_PATH}}"; export LD_RUN_PATH
+
+    # zlib
+    export ZLIB_FILE="zlib-$ZLIB_VERSION.tar.gz"
+    export ZLIB_FOLDER="zlib-$ZLIB_VERSION"
+    export ZLIB_URL="https://github.com/madler/zlib/archive/refs/tags/v$ZLIB_VERSION.tar.gz"
+
+    # libffi
+    export LIBFFI_FILE="libffi-$LIBFFI_VERSION.tar.gz"
+    export LIBFFI_FOLDER="libffi-$LIBFFI_VERSION"
+    export LIBFFI_URL="https://github.com/libffi/libffi/releases/download/v$LIBFFI_VERSION/libffi-$LIBFFI_VERSION.tar.gz"
+
     # python
     export PYTHON_FILE="Python-$PYTHON_VERSION.tgz"
     export PYTHON_FOLDER="Python-$PYTHON_VERSION"
@@ -36,92 +55,106 @@ setup_env()
     export VIM_URL="https://github.com/vim/vim/archive/refs/tags/v$VIM_VERSION.tar.gz"
 }
 
+download_and_extract_targz()
+{
+    PREFIX="$1"
+    FILE_NAME="${PREFIX}_FILE"
+    FOLDER_NAME="${PREFIX}_FOLDER"
+    URL_NAME="${PREFIX}_URL"
+
+    eval FILE="\$${FILE_NAME}"
+    eval FOLDER="\$${FOLDER_NAME}"
+    eval URL="\$${URL_NAME}"
+
+    cd "$BUILD_PREFIX"
+    if [ ! -f "$$FILE" ]; then
+        wget -O "$FILE" "$URL"
+    fi
+    rm -rf "$FOLDER"
+    tar -xzf "$FILE"
+}
+
 download_sources()
 {
+    download_and_extract_targz "ZLIB"
+    download_and_extract_targz "LIBFFI"
+    download_and_extract_targz "PYTHON"
+    download_and_extract_targz "RUBY"
+    download_and_extract_targz "VIM"
+}
+
+cleanup_file_and_folder()
+{
+    PREFIX="$1"
+    FILE_NAME="${PREFIX}_FILE"
+    FOLDER_NAME="${PREFIX}_FOLDER"
+
+    eval FILE="\$${FILE_NAME}"
+    eval FOLDER="\$${FOLDER_NAME}"
+
     cd "$BUILD_PREFIX"
-
-    # python
-    if [ ! -f "$PYTHON_FILE" ]; then
-        wget "$PYTHON_URL"
-    fi
-    rm -rf "$PYTHON_FOLDER"
-    tar -xzf "$PYTHON_FILE"
-
-    # ruby
-    if [ ! -f "$RUBY_FILE" ]; then
-        wget "$RUBY_URL"
-    fi
-    rm -rf "$RUBY_FOLDER"
-    tar -xzf "$RUBY_FILE"
-
-    # vim
-    if [ ! -f "$VIM_FILE" ]; then
-        wget -O "$VIM_FILE" "$VIM_URL"
-    fi
-    rm -rf "$VIM_FOLDER"
-    tar -xzf "$VIM_FILE"
+    rm "$FILE"
+    rm -r "$FOLDER"
 }
 
 cleanup()
 {
-    cd "$BUILD_PREFIX"
-
-    # python
-    rm "$PYTHON_FILE"
-    rm -r "$PYTHON_FOLDER"
-
-    # ruby
-    rm "$RUBY_FILE"
-    rm -r "$RUBY_FOLDER"
-
-    # vim
-    rm "$VIM_FILE"
-    rm -r "$VIM_FOLDER"
+    cleanup_file_and_folder "ZLIB"
+    cleanup_file_and_folder "LIBFFI"
+    cleanup_file_and_folder "PYTHON"
+    cleanup_file_and_folder "RUBY"
+    cleanup_file_and_folder "VIM"
 }
 
+build_with_configure_and_make()
+{
+    PREFIX="$1"
+    FOLDER_NAME="${PREFIX}_FOLDER"
+    eval FOLDER="\$${FOLDER_NAME}"
 
-# prepare env
+    args=("$@")
+    args[0]="--prefix=${INSTALL_PREFIX}"
+
+    cd "$BUILD_PREFIX"
+    cd "$FOLDER"
+    echo $FOLDER
+    echo $(pwd)
+    ./configure "${args[@]}"
+    make -j $(nproc)
+    make install
+}
+
+build()
+{
+    build_with_configure_and_make "ZLIB"
+
+    build_with_configure_and_make "LIBFFI"
+
+    build_with_configure_and_make "PYTHON" \
+        --enable-shared \
+        --enable-optimizations
+
+    build_with_configure_and_make "RUBY"
+
+    build_with_configure_and_make "VIM" \
+        --with-features=huge \
+        --enable-multibyte \
+        --enable-rubyinterp=yes \
+        --enable-python3interp=yes \
+        --with-python3-config-dir=$(python3-config --configdir) \
+        --enable-perlinterp=no \
+        --enable-luainterp=no \
+        --enable-gui=no \
+        --enable-cscope
+}
+
+# run stuff
 cd "$VIM_BUILD_PREFIX"
-. ./environment
 mkdir -p "$INSTALL_PREFIX"
 mkdir -p "$BUILD_PREFIX"
 setup_env
 download_sources
-
-# build python
-cd "$BUILD_PREFIX"
-cd "$PYTHON_FOLDER"
-mkdir build
-cd build
-../configure --enable-shared --enable-optimizations --prefix="$INSTALL_PREFIX"
-make -j $(nproc)
-make install
-
-# build ruby
-cd "$BUILD_PREFIX"
-cd "$RUBY_FOLDER"
-mkdir build
-cd build
-../configure --prefix="$INSTALL_PREFIX"
-make -j $(nproc)
-make install
-
-# build vim
-cd "$BUILD_PREFIX"
-cd "$VIM_FOLDER"
-./configure \
-    --with-features=huge \
-    --enable-multibyte \
-    --enable-rubyinterp=yes \
-    --enable-python3interp=yes \
-    --with-python3-config-dir=$(python3-config --configdir) \
-    --enable-perlinterp=no \
-    --enable-luainterp=no \
-    --enable-gui=no \
-    --enable-cscope \
-    --prefix="$INSTALL_PREFIX"
-make -j $(nproc)
-make install
+build
 
 # cleanup
 cleanup
